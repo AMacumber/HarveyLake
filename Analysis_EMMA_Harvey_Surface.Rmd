@@ -1,0 +1,330 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+#  End Member Mixing Analysis
+#### Performed with EMMAgeo in R
+#### *Author: Andrew Macumber*
+
+
+## Table of Contents
+* [Prep Workspace](#workspace)
+* [Load Data](#data)
+* [Data Wrangling](#wrangle)
+* [Data Objects](#objects)
+* [Graph: Grain Size Frequency Distribution](#psagsd)
+* [EMMA: Model Parameters](#emmaparameters)
+* [EMMA: Run All Models](#emmamodelall)
+* [EMMA: Run Specific Model](#emmamodelone)
+* [EMMA: Run Robust Model](#emmamodelrobust)
+* [EMMA: Results](#emmaresults)
+* [Save Data](#save)
+* [Graph: Stacked Stratigraphic Plot](#stacked)
+* [Graph: Robust End Member Distributions](#emgsd)
+
+## <a name="workspace"></a>Prep Workspace
+Remove previous lists from R
+```{r}
+rm(list=ls())
+```
+
+Load libraries
+```{r eval = FALSE}
+library("EMMAgeo")
+library("functional")
+```
+
+## <a name="data"></a>Load Data
+Bring in the dataset
+```{r}
+psa_v000 <- read.table('PSA_Peroxide.csv', sep = ",")
+```
+Check dataframe (optional)
+```{r eval = FALSE}
+dim(psa_v000)
+head(psa_v000)
+```
+
+## <a name="wrangle"></a>Data Wrangling
+Remove one row and two column headers
+```{r}
+psa_v001 <- psa_v000[c(-1, -18), c(-c(1:3),-c(94:96))]
+```
+Remove NULL values
+```{r}
+psa_v002 <- na.omit(psa_v001)
+```
+Check for grain size bins (columns) with zero sum
+```{r}
+colSums(psa_v002)
+```
+Convert to double matrix
+```{r}
+psa_v003 <- as.matrix(psa_v002)
+```
+Ensure rows sum to 100
+```{r}
+psa_v004 <- psa_v003 / apply(psa_v003,1,sum) * 100
+```
+Check dataframe (optional)
+```{r eval = FALSE}
+dim(psa_v004)
+head(psa_v004)
+```
+
+## <a name="objects"></a>Data Objects
+Create a grain size vector
+```{r}
+mm_bins <- as.numeric(psa_v000[1,c(-c(1:3),-c(94:96))])
+```
+Create a depth vector
+```{r}
+depth <- as.vector(psa_v000[c(-1,-2,-3,-6,-15,-18,-27,-29,-38,-39,-41,-42,-43,-51,-77,-99),1])
+```
+Assign an emma object
+```{r}
+emma <- psa_v004
+```
+
+## <a name="psagsd"></a>Graph: Grain Size Frequency Distribution
+*Generate a plot of median, minimum and maximum grain size (log) versus frequency (%)*
+
+Create a dataframe with grain size (column) mins, max and medians
+```{r}
+library("matrixStats")
+psa.range <- cbind(mm_bins,
+                   colMins(emma, na.rm=TRUE),
+                   colMaxs(emma, na.rm=TRUE),
+                   colMedians(emma, na.rm=TRUE))
+```
+Create a graph showing the median, minimum and maximum grain size frequencies
+```{r}
+plot(psa.range[,1],psa.range[,4], type ="l", log = "x", # plot grain-size (log) versus median
+     xlim = c(0.1,2000), ylim = c(0,5), # set the axes limits
+     col ="black", xaxt = "n", # colour of the line and suppress x-axis
+     xlab = "Grain-size (microns)",
+     ylab = "Frequency (%)",
+     main = "Harvey Lake Grain-size Distribution") # labels
+lines(psa.range[,1],psa.range[,2], col = "black", lty = 2) # add a line for minimum (grey-dash)
+lines(psa.range[,1],psa.range[,3], col = "black", lty = 2) # add a line for maximum (grey-dash)
+axis (side=1, at = c(0.1,1,10,100,1000)) # add major tick marks
+axis (side=1, at = c(seq(0.2,0.9,by = 0.1), seq(2,9, by =1), # add minor tick marks
+                     seq(20,90, by = 10), seq(200,900,by=100)),
+      labels = NA, tcl=-0.25, lwd=0, lwd.ticks=1) # no labels and shorten tick marks
+legend(0.1,10,c("Median","Minimum","Maximum"), # add a legend at specific spot with labels
+       lty=c(1,2,2), col=c("black","black","black")) # ensure same as lines in plot
+```
+
+## <a name="emmaparameters"></a>EMMA: Model Parameters
+Check your dataset for errors.
+```{r}
+check.data(X = emma , q = 10, l = seq(0, 1, 0.01), c = 100)
+```
+Create a sequence of weight transformations (l)
+```{r}
+l <- get.l(X = emma, n = 10, max = 0.95, min = 0)
+```
+Combine the range of end members and weight transformations (Q). Create a range of end members only (q)
+```{r}
+Q <- get.q(X = emma, l = l)
+q <- 2:6
+```
+See a graph showing how weight transformation (l) varies with number of end Members
+```{r}
+EM.tp <- test.parameters(X = emma, q = q, l = l, plot = "mRt",
+                      legend = "bottomright", cex = 0.7,
+                      multicore = FALSE,
+                      colour = rgb((1:7) / 7, 0.9, 0.2, 1)
+                      )
+```
+See a table showing how weight transformation (l) varies with number of end-members
+```{r}
+EM.tp$mRt
+```
+
+## <a name="emmamodelall"></a>EMMA: Run All Models
+```{r}
+EM.pot <- model.EM(X = emma, q = Q)
+```
+
+## <a name="emmamodelone"></a>EMMA: Run Specific Model
+```{r}
+EM.opt <- EMMA(X = emma,
+               q = 4, l = 0.006,
+               c = 100,
+               plot = TRUE,
+               classunits = mm_bins,
+               ID = as.numeric(depth),
+               xlab = c(expression(paste("Class [", micron, "]")), "Depth (cm)"))
+```
+
+## <a name="emmamodelrobust"></a>EMMA: Run Robust Model
+Get the bin size ranges for end members (i.e., limits)
+```{r}
+# Visualize limits
+stem(EM.pot$modes, scale = 2)
+
+# Assign limits
+v1 <- c(28,48,64,74)
+v2 <- c(32,54,68,78)
+limits = cbind(v1,v2)
+```
+Run robust model
+```{r}
+EM.rob <- robust.EM(em = EM.pot
+                    , l = 0.006
+                    , limits = limits
+                    , c = 100
+                    , plot = TRUE
+                    , classunits = mm_bins
+                    , ID = as.numeric(depth)
+                    , xlab = c(expression(paste("Class [", micron, "]")), "Depth (cm)")
+                    )
+```
+
+## <a name="emmaresults"></a>EMMA: Results
+We tested `r nrow(EM.pot$Vqsn)` models to find the initial parameters. The mean total explained variance:
+
+* For all models: `r max(EM.pot$mRt)`
+* For the optimal model: `r EM.opt$mRt`
+* For the robust model: `r EM.rob$mRt`
+
+The optimal model had the following end member modes: `r EM.opt$modes` each explaining `r EM.opt$Mqs.var` of the variance, respectively.
+
+The robust model had the following end member modes: `r mm_bins[EM.rob$modes[1]]`, `r mm_bins[EM.rob$modes[2]]`, `r mm_bins[EM.rob$modes[3]]` and `r mm_bins[EM.rob$modes[4]]`. Each explaining `r EM.rob$Mqs.var` of the variance, respectively.
+
+## <a name="save"></a>Save Data
+Create a dataframe with robust end member mean abundance and standard deviation.
+```{r}
+EM.rob.mean <- EM.rob$scores$mean
+EM.rob.sd <- EM.rob$scores$sd
+EM.rob.scores <- cbind(EM.rob.mean, EM.rob.sd)
+colnames(EM.rob.scores) <- c("EM_06_Mean", "EM_40_Mean", "EM_177_Mean", "EM_450_Mean",
+                             "EM_06_SD", "EM_40_SD", "EM_177_SD", "EM_450_SD")
+row.names(EM.rob.scores) <- depth
+```
+Export File
+```{r}
+write.csv(EM.rob.scores, file ="Chap01_EMMA_Q4_scores.csv")
+```
+
+## <a name="emgsd"></a>Graph: Robust End Member Distributions
+This figure will show the average grain size distribution with standard deviations for each robust end member. Each end member will be plotted on its on graph. The grain size distributions of all samples will be displayed as grey lines on each graph. *Note: Creates Figure 7 of Chapter 1. Markdown creates an improperly formatted graph. Not run here*
+
+Format sample data
+```{r}
+dietze <- rbind(mm_bins, emma)
+dietze <- t(dietze)
+```
+Format robust end member means
+```{r}
+robust <- rbind(mm_bins, EM.rob$loadings$mean)
+robust <- t(robust)
+```
+Format robust end member standard deviations
+```{r}
+robust.sd <- t(EM.rob$loadings$sd)
+```
+Plot the graph
+```{r eval = FALSE}
+plot.new()
+
+# Design the layout of the graph
+layout(matrix(c(1,2,3,4),nrow = 4, byrow = TRUE))
+
+# First Graph
+
+## Samples
+plot(dietze[,1],dietze[,2], type = "l", log ="x", ylim = c(0,10)
+     , xlim = c(0.1,2000),col="grey"
+     , xaxt="n", xlab = ""
+     , ylab = "Frequency (%)")
+for (i in 3:ncol(dietze)) lines(dietze[,1],dietze[,i],col="grey") # plot for every column
+
+## The End Member
+lines(robust[,1],robust[,2],type="l",col="black",lty = 1, lwd = 2) # mean
+lines(robust[,1],robust[,2]-robust.sd[,1],type="l",col="black",lty = 2, lwd = 2) # lower standard deviation
+lines(robust[,1],robust[,2]+robust.sd[,1],type="l",col="black",lty = 2, lwd = 2)
+
+## Graph Details
+axis (side=1, at = c(0.1,1,10,100,1000), labels = NA) # add major tick marks
+axis (side=1, at = c(seq(0.2,0.9,by = 0.1), seq(2,9, by =1), # add minor tick marks
+                     seq(20,90, by = 10), seq(200,900,by=100))
+      , labels = NA, tcl=-0.25, lwd=0, lwd.ticks=1) # no labels and shorten tick marks
+legend(350,9.5,c("Samples","End Member Mean","End Member St. Deviation"), # add a legend at specific spot with labels
+       lty=c(1,1,2), col=c("grey","black","black")) # ensure same as lines in plot
+text(0.1, 8, adj = 0, "Fine silt (6 microns) end member\nexplaining 24% of variance", cex = 1.5)
+title(main = "Harvey Lake Surface Samples: Robust End Members", cex.main = 2)
+
+
+# Second Graph
+
+## Samples
+plot(dietze[,1],dietze[,2], type = "l", log ="x", ylim = c(0,10),
+     xlim = c(0.1,2000),col="grey", xaxt="n", xlab = "",
+     ylab = "Frequency (%)")
+for (i in 3:ncol(dietze)) lines(dietze[,1],dietze[,i],col="grey") # plot for every column
+
+## The End Member
+lines(robust[,1],robust[,3],type="l",col="black", lty = 1, lwd = 2)
+lines(robust[,1],robust[,3]-robust.sd[,2],type="l",col="black", lty = 2, lwd = 2) # upper standard deviation
+lines(robust[,1],robust[,3]+robust.sd[,2],type="l",col="black", lty = 2, lwd = 2)
+
+## Graph Details
+axis (side=1, at = c(0.1,1,10,100,1000), labels = NA) # add major tick marks
+axis (side=1, at = c(seq(0.2,0.9,by = 0.1), seq(2,9, by =1), # add minor tick marks
+                     seq(20,90, by = 10), seq(200,900,by=100))
+      , labels = NA, tcl=-0.25, lwd=0, lwd.ticks=1) # no labels and shorten tick marks
+legend(350,9.5,c("Samples","End Member Mean","End Member St. Deviation"), # add a legend at specific spot with labels
+       lty=c(1,1,2), col=c("grey","black","black")) # ensure same as lines in plot
+text(0.1, 8, adj = 0, "Very coarse silt (40 microns) end member\nexplaining 42% of variance", cex = 1.5)
+
+
+# Third Graph
+
+## Samples
+plot(dietze[,1],dietze[,2], type = "l", log ="x", ylim = c(0,10),
+     xlim = c(0.1,2000),col="grey", xaxt="n", xlab = "",
+     ylab = "Frequency (%)")
+for (i in 3:ncol(dietze)) lines(dietze[,1],dietze[,i],col="grey") # plot for every column
+
+## The End Member
+lines(robust[,1],robust[,4],type="l",col="black",lty = 1, lwd = 2)
+lines(robust[,1],robust[,4]-robust.sd[,3],type="l",col="black",lty = 2, lwd = 2)
+lines(robust[,1],robust[,4]+robust.sd[,3],type="l",col="black",lty = 2, lwd = 2)
+
+## Graph Details
+axis (side=1, at = c(0.1,1,10,100,1000), labels = NA) # add major tick marks
+axis (side=1, at = c(seq(0.2,0.9,by = 0.1), seq(2,9, by =1), # add minor tick marks
+                     seq(20,90, by = 10), seq(200,900,by=100))
+      , labels = NA, tcl=-0.25, lwd=0, lwd.ticks=1) # no labels and shorten tick marks
+legend(350,9.5,c("Samples","End Member Mean","End Member St. Deviation"), # add a legend at specific spot with labels
+       lty=c(1,1,2), col=c("grey","black","black")) # ensure same as lines in plot
+text(0.1, 8, adj = 0, "Fine sand (180 microns) end member\nexplaining 22% of variance", cex = 1.5)
+
+# Fourth Graph
+
+## Samples
+plot(dietze[,1],dietze[,2], type = "l", log ="x", ylim = c(0,10),
+     xlim = c(0.1,2000),col="grey", xaxt="n", xlab = "",
+     ylab = "Frequency (%)")
+for (i in 3:ncol(dietze)) lines(dietze[,1],dietze[,i],col="grey") # plot for every column
+
+## The End Member
+lines(robust[,1],robust[,5],type="l",col="black",lty = 1, lwd = 2)
+lines(robust[,1],robust[,5]-robust.sd[,4],type="l",col="black",lty = 2, lwd = 2)
+lines(robust[,1],robust[,5]+robust.sd[,4],type="l",col="black",lty = 2, lwd = 2)
+
+## Graph Details
+axis (side=1, at = c(0.1,1,10,100,1000)) # add major tick marks
+axis (side=1, at = c(seq(0.2,0.9,by = 0.1), seq(2,9, by =1), # add minor tick marks
+                     seq(20,90, by = 10), seq(200,900,by=100))
+      , labels = NA, tcl=-0.25, lwd=0, lwd.ticks=1) # no labels and shorten tick marks
+legend(350,9.5,c("Samples","End Member Mean","End Member St. Deviation"), # add a legend at specific spot with labels
+       lty=c(1,1,2), col=c("grey","black","black")) # ensure same as lines in plot
+text(0.1, 8, adj = 0, "Medium sand (450 microns) end member\nexplaining 9% of variance", cex = 1.5)
+title(xlab = "Grain size (microns)")
+```
