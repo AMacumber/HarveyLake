@@ -9,7 +9,7 @@ This repository contains all the scripts (apart from ArcGIS) used for data analy
 Merge ~760 CSVs representing hourly meteorological data from Fredericton A station from 1953-2015 from National Resources Canada database.
 
 ## Analysis_Frequency_WindData (Python Script)
-Count the number of hours where the wind speed matches the Beaufort Wind Scale. Using the merged hourly meteorological data set (n = 552240) from Fredericton A station (1953-2015; National Resources Canada). Creates Table 2 of Chapter 1.
+Percent of record where Beaufort Scales were matched or exceeded. Using the merged hourly meteorological data set (n = 552240) from Fredericton A station (1953-2015; National Resources Canada). Creates Table 2 of Chapter 1.
 
 ## Analysis_EMMA (Markdown R Script & PDF)
 Details on end-member mixing analysis. Data wrangling and model selection/optimisation. Creates Table 3, Figure 7 and Figure S1 in Chapter 1.

@@ -1,4 +1,7 @@
 # McClelland Slides
+## Run this script after you have run the EMMA script
+## It will collect data from the global environment (R Studio)
+
 
 ## Load in data
 
